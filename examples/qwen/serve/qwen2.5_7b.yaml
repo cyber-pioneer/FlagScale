@@ -1,0 +1,17 @@
+command_line_mode: true
+
+vllm:
+  model_tag: /models/Qwen2.5-7B-Instruct
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.9
+  max_model_len: 32768
+  max-num-seqs: 256
+  port: 8092
+  action_args:
+    - trust-remote-code
+    - enable-chunked-prefill
+
+serve:
+  deployments:
+  - name: qwen2.5_7b
+    num_replicas: 1  
