@@ -1,5 +1,6 @@
 import os, sys
 import logging
+import yaml
 #os.environ["RAY_LOG_TO_STDERR"] = "1"
 #os.environ["RAY_BACKEND_LOG_LEVEL"] = "info"  # 或 debug
 os.environ["PYTHONUNBUFFERED"] = "1"
@@ -26,20 +27,21 @@ ray.init(log_to_driver=True, logging_level=logging.DEBUG)
 
 # 定义一个 Ray 任务来启动 vllm serve
 @ray.remote(num_gpus=1)
-def start_vllm_serve(model_path, trust_remote_code, max_model_len, max_num_seqs, enable_chunked_prefill, tensor_parallel_size, port):
+def start_vllm_serve(args):
     # 构建命令
-    command = [
-        'vllm', 'serve',
-        model_path,
-        '--trust-remote-code' if trust_remote_code else '',
-        f'--max-model-len={max_model_len}',
-        f'--max-num-seqs={max_num_seqs}',
-        '--enable-chunked-prefill' if enable_chunked_prefill else '',
-        f'--tensor-parallel-size={tensor_parallel_size}',
-        f'--port={port}'
-    ]
+    # command = [
+    #     'vllm', 'serve',
+    #     model_path,
+    #     '--trust-remote-code' if trust_remote_code else '',
+    #     f'--max-model-len={max_model_len}',
+    #     f'--max-num-seqs={max_num_seqs}',
+    #     '--enable-chunked-prefill' if enable_chunked_prefill else '',
+    #     f'--tensor-parallel-size={tensor_parallel_size}',
+    #     f'--port={port}'
+    # ]
     
     # 过滤掉空字符串
+    breakpoint()
     command = [arg for arg in command if arg]
 
 #    command = [
@@ -77,32 +79,17 @@ def main():
     parser = argparse.ArgumentParser(description='Start vllm serve with Ray')
     
     # 添加命令行参数
-    parser.add_argument('--model_path', type=str, required=True, help='Path to the model')
-    parser.add_argument('--trust_remote_code', action='store_true', help='Trust remote code')
-    parser.add_argument('--max_model_len', type=int, default=32768, help='Maximum model length')
-    parser.add_argument('--max_num_seqs', type=int, default=256, help='Maximum number of sequences')
-    parser.add_argument('--enable_chunked_prefill', action='store_true', help='Enable chunked prefill')
-    parser.add_argument('--tensor_parallel_size', type=int, default=1, help='Tensor parallel size')
-    parser.add_argument('--port', type=int, default=9013, help='Port number')
-
-    # 解析命令行参数
+    parser.add_argument('--model-path', type=str, required=True, help='Path to the model')
+    
     args = parser.parse_args()
+    vllm_args = yaml.safe_load(args.model_path)
+    breakpoint()
     # 启动 vllm serve
-    result = start_vllm_serve.remote(
-        args.model_path,
-        args.trust_remote_code,
-        args.max_model_len,
-        args.max_num_seqs,
-        args.enable_chunked_prefill,
-        args.tensor_parallel_size,
-        args.port
-    )
-
-    # 获取结果
+    result = start_vllm_serve.remote(vllm_args)# 获取结果
     return_code = ray.get(result)
     
     # 打印返回码
     print(f"vllm serve exited with return code: {return_code}")
 
 if __name__ == "__main__":
-    main()                                                                                                          33,3          19%
+    main()
