@@ -35,7 +35,7 @@ def _get_args_vllm(config: DictConfig):
     return args
 
 
-def _update_config_inference(config: DictConfig):
+def _update_config_serve(config: DictConfig):
     exp_dir = os.path.abspath(config.experiment.exp_dir)
     if not os.path.isdir(exp_dir):
         os.makedirs(exp_dir)
@@ -44,23 +44,23 @@ def _update_config_inference(config: DictConfig):
     OmegaConf.set_struct(config, False)
 
     if config.get("logging", None) is None:
-        config.inference.logging = DictConfig({})
+        config.serve.logging = DictConfig({})
 
     log_dir = os.path.join(exp_dir, f"serve_logs")
     scripts_dir = os.path.join(log_dir, "scripts")
     pids_dir = os.path.join(log_dir, "pids")
 
-    config.inference.logging.log_dir = log_dir
-    config.inference.logging.scripts_dir = scripts_dir
-    config.inference.logging.pids_dir = pids_dir
+    config.serve.logging.log_dir = log_dir
+    config.serve.logging.scripts_dir = scripts_dir
+    config.serve.logging.pids_dir = pids_dir
 
     OmegaConf.set_struct(config, True)
 
 
-def _generate_run_script_inference(
+def _generate_run_script_serve(
     config, host, node_rank, cmd, background=True, with_test=False
 ):
-    logging_config = config.inference.logging
+    logging_config = config.serve.logging
 
     no_shared_fs = config.experiment.runner.get("no_shared_fs", False)
     if no_shared_fs:
@@ -119,7 +119,7 @@ def _generate_run_script_inference(
 
 
 def _generate_stop_script(config, host, node_rank):
-    logging_config = config.inference.logging
+    logging_config = config.serve.logging
 
     host_stop_script_file = os.path.join(
         logging_config.scripts_dir, f"host_{node_rank}_{host}_stop.sh"
@@ -159,14 +159,16 @@ class SSHServeRunner(RunnerBase):
         self.task_type = getattr(self.config.experiment.task, "type", None)
         assert self.task_type == "serve", f"Unsupported task type: {self.task_type}"
         self.command_line_mode = getattr(self.config.serve, "command-line-mode", None)
-        if not self.command_line_mode:
-            self._prepare()
+        self._prepare()
 
     def _prepare(self):
-        _update_config_inference(self.config)
+        _update_config_serve(self.config)
         self.user_args = _get_args_vllm(self.config)
         self.user_envs = self.config.experiment.get("envs", {})
-        self.user_script = self.config.experiment.task.entrypoint
+        if self.command_line_mode:
+            self.user_script = "flagscale/serve/run_simple_vllm.py"
+        else:
+            self.user_script = self.config.experiment.task.entrypoint
         self.resources = parse_hostfile(
             self.config.experiment.runner.get("hostfile", None)
         )
@@ -190,8 +192,8 @@ class SSHServeRunner(RunnerBase):
 
         cmd = shlex.join(export_cmd + ["python"] + [self.user_script] + self.user_args)
 
-        logging_config = self.config.inference.logging
-        host_run_script_file = _generate_run_script_inference(
+        logging_config = self.config.serve.logging
+        host_run_script_file = _generate_run_script_serve(
             self.config, host, node_rank, cmd, background=True, with_test=with_test
         )
 
@@ -275,7 +277,7 @@ class SSHServeRunner(RunnerBase):
 
     def _stop_each(self, host, node_rank):
         host_stop_script_file = _generate_stop_script(self.config, host, node_rank)
-        logging_config = self.config.inference.logging
+        logging_config = self.config.serve.logging
 
         if host != "localhost":
             ssh_port = self.config.experiment.runner.get("ssh_port", 22)
