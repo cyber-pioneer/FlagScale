@@ -16,7 +16,8 @@ def inference_qwen(config):
     sampling_params = SamplingParams(**sampling_cfg)
 
     outputs = llm.generate(prompts, sampling_params)
-    print("generate result ", outputs, flush=True)
+    print("========= prompt ========= ", prompts, flush=True)
+    print("===== generate result ==== ", outputs, flush=True)
 
 
 if __name__ == "__main__":
