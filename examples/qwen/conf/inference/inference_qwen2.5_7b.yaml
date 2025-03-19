@@ -1,0 +1,16 @@
+llm:
+  model: /models/Qwen2.5-7B-Instruct
+  dtype: bfloat16
+  skip_tokenizer_init: true
+  trust_remote_code: true
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  gpu_memory_utilization: 0.5
+  disable_log_stats: false
+
+generate:
+  prompts: "Please introduce BAAI."
+
+  sampling:
+    top_k: 2048
+    max_tokens: 1000
