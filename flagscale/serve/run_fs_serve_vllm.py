@@ -153,6 +153,7 @@ def get_deploy_config(model_name, device="gpu"):
             or 1
         )
         ray_actor_options["num_gpus"] = tensor_parallel_size * pipeline_parallel_size
+        ray_actor_options["num_cpus"] = tensor_parallel_size * pipeline_parallel_size
         resource_config["ray_actor_options"] = ray_actor_options
 
     resource_config["max_ongoing_requests"] = 1000
@@ -232,7 +233,7 @@ class LLMActor:
 
 
 # refer to openai-type endpoints of vLLM
-@serve.deployment(num_replicas="auto", max_ongoing_requests=1000)
+@serve.deployment(num_replicas="auto", max_ongoing_requests=1000, ray_actor_options={"num_cpus": 1})
 @serve.ingress(app)
 class LLMService:
     def __init__(self, llm_actor):

@@ -690,7 +690,9 @@ class ServeSearcher(Searcher):
                 i["engine"] = engine
             strategies_all.extend(strategies)
 
-        self.logger.info("================== grid search space: ================== \n")
+        self.logger.info(
+            f"================== grid search space capacity: {len(strategies)} ================== \n"
+        )
         self.logger.info(strategies)
 
         return strategies_all
