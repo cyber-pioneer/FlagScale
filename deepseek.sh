@@ -1,0 +1,1 @@
+python run.py --config-path ./examples/deepseek_r1/conf --config-name serve action=run
