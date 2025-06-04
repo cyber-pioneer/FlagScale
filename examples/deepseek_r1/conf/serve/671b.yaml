@@ -1,7 +1,7 @@
 - serve_id: vllm_model
   engine: vllm
   engine_args:
-    model: /models/DeepSeek-R1 # path of weight of deepseek r1
+    model: /models/deepseek_r1_BF16 # path of weight of deepseek r1
     gpu_memory_utilization: 0.95
     max_model_len: 32768
     max_num_seqs: 256
