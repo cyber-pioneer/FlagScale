@@ -1,0 +1,1 @@
+python run.py --config-path ./examples/qwen3/conf --config-name serve_multiple_instance action=auto_tune
