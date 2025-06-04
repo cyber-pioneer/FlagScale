@@ -1,5 +1,7 @@
 # ip slots type=xxx[optional]
 # master node
-x.x.x.x slots=8 type=gpu
+10.8.192.25 slots=8 type=gpu
 # worker nodes
-x.x.x.x slots=8 type=gpu
+10.8.192.26 slots=8 type=gpu
+10.8.192.27 slots=8 type=gpu
+10.8.192.28 slots=8 type=gpu
