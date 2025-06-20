@@ -19,8 +19,10 @@ from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.chat_utils import (
     apply_hf_chat_template,
+    load_chat_template,
     parse_chat_messages,
     resolve_chat_template_content_format,
+    resolve_hf_chat_template,
 )
 from vllm.entrypoints.openai.protocol import (
     ChatCompletionRequest,
@@ -32,7 +34,9 @@ from vllm.entrypoints.openai.protocol import (
     CompletionStreamResponse,
     UsageInfo,
 )
+from vllm.entrypoints.openai.tool_parsers import ToolParser, ToolParserManager
 from vllm.inputs import PromptType, SingletonPrompt, TextPrompt, TokensPrompt
+from vllm.transformers_utils.tokenizer import AnyTokenizer, MistralTokenizer
 from vllm.utils import random_uuid
 
 try:
@@ -267,9 +271,26 @@ class LLMService:
     def __init__(self, llm_actor):
         self.llm_actor = llm_actor
         self.ready = False
+        self.engine_args = get_engine_args("vllm_model")
         self.tokenizer = AutoTokenizer.from_pretrained(
-            get_engine_args("vllm_model")["model"], trust_remote_code=True
+            self.engine_args["model"], trust_remote_code=True
         )
+        self.chat_template = load_chat_template(self.engine_args.get("chat_template", None))
+        self.tool_parser = None
+        self.update_parser_tools()
+
+    def get_parser_tools(self):
+        tool_parser = self.engine_args.get("tool_call_parser", None)
+        enable_auto_tool_choice = self.engine_args.get("enable_auto_tool_choice", None)
+        if enable_auto_tool_choice:
+            try:
+                self.tool_parser = ToolParserManager.get_tool_parser(tool_parser)
+            except Exception as e:
+                raise TypeError(
+                    "Error: --enable-auto-tool-choice requires "
+                    f"tool_parser:'{tool_parser}' which has not "
+                    "been registered"
+                ) from e
 
     @app.post("/v1/completions")
     async def generate_handler(self, request: CompletionRequest):
@@ -416,10 +437,29 @@ class LLMService:
                 )
         user_message = request.messages[-1]["content"]
         mm_data = dict()
+        tool_parser = self.tool_parser
+
+        if (
+            request.tool_choice == "auto"
+            and not (
+                self.engine_args.get("enable_auto_tool_choice", None) and tool_parser is not None
+            )
+            and not isinstance(self.tokenizer, MistralTokenizer)
+        ):
+            # for hf tokenizers, "auto" tools requires
+            # --enable-auto-tool-choice and --tool-call-parser
+            return self.create_error_response(
+                "\"auto\" tool choice requires "
+                "--enable-auto-tool-choice and --tool-call-parser to be set"
+            )
+
+        tool_dicts = (
+            None if request.tools is None else [tool.model_dump() for tool in request.tools]
+        )
 
         try:
             resolved_content_format = resolve_chat_template_content_format(
-                chat_template=None,
+                chat_template=self.chat_template,
                 tools=None,
                 given_format="auto",
                 tokenizer=self.tokenizer,
@@ -438,7 +478,7 @@ class LLMService:
             formatted_text = apply_hf_chat_template(
                 self.tokenizer,
                 conversation=conversation,
-                chat_template=None,
+                chat_template=self.chat_template,
                 tools=None,
                 trust_remote_code=True,
                 tokenize=False,
