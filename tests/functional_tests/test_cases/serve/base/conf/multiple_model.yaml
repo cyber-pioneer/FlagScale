@@ -17,9 +17,13 @@ experiment:
       name: /generate
       request:
         args:
-          - prompt
-        types:
-          - str
+          - name: prompt
+            type: str
+            required: true
+          - name: system_prompt
+            type: Optional[str]
+            required: false
+            default: "You are a helpful assistant."
   envs:
     CUDA_DEVICE_MAX_CONNECTIONS: 1
     no_proxy: "127.0.0.1,localhost"

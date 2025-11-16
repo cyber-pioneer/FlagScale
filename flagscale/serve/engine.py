@@ -1,3 +1,4 @@
+import builtins
 import importlib
 import importlib.util
 import inspect
@@ -7,6 +8,7 @@ import os
 import subprocess
 import sys
 import threading
+import typing
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, get_args, get_origin
@@ -88,6 +90,73 @@ def load_class_from_file(file_path: str, class_name: str):
             sys.path.pop(0)
 
 
+# Allowed root types for safety
+_ALLOWED_BASES = {
+    int,
+    float,
+    str,
+    bool,
+    list,
+    dict,
+    tuple,
+    set,
+    Any,
+    List,
+    Dict,
+    Tuple,
+    Set,
+    Union,
+    Optional,
+}
+
+
+def parse_type(type_str: str):
+    """
+    Strictly parse and validate a type string into a real Python type.
+    Only known and supported types from builtins or typing are allowed.
+    """
+    if not isinstance(type_str, str) or not type_str.strip():
+        raise ValueError(f"Invalid type string: {type_str!r}")
+
+    ns = {**typing.__dict__, **builtins.__dict__}
+
+    try:
+        t = eval(type_str, ns)
+    except Exception as e:
+        raise ValueError(
+            f"Unsupported or invalid type string: {type_str!r}. Such types are supported: {_ALLOWED_BASES!r}"
+        ) from e
+
+    # Validate the type structure
+    origin = get_origin(t) or t
+    if origin not in _ALLOWED_BASES:
+        raise ValueError(f"Type {type_str!r} not allowed (origin={origin!r})")
+
+    return t
+
+
+def build_request_model(request_config):
+    """
+    Build a Pydantic model dynamically from config.
+    Each entry in request_config["args"] should be a dict like:
+        {"name": "num", "type": "int", "required": False, "default": 1}
+    """
+    fields = {}
+    for arg in request_config["args"]:
+        name = arg["name"]
+        type_ = parse_type(arg["type"])
+        required = arg.get("required", True)
+        default = arg.get("default", ...)
+
+        if not required:
+            if default is ...:
+                raise ValueError(f"Default value for optional field {name} must be provided")
+
+        fields[name] = (type_, default)
+
+    return create_model("Request", **fields)
+
+
 def make_deployment(logic_cls, **deploy_kwargs):
     @serve.deployment(**deploy_kwargs)
     class WrappedModel:
@@ -119,13 +188,7 @@ class FinalModel:
         self.roots = list(all_nodes - dep_nodes)
         assert len(self.roots) == 1, "Only one return node is allowed"
         request_config = config.experiment.runner.deploy.request
-        self.request_base = create_model(
-            "Request",
-            **{
-                field: (type_, ...)
-                for field, type_ in zip(request_config.args, request_config.types)
-            },
-        )
+        self.request_base = build_request_model(request_config)
 
     async def __call__(self, http_request):
         origin_request = await http_request.json()
