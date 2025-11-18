@@ -176,14 +176,12 @@ def build_request_model(request_config):
 
     if not isinstance(request_config, (list, omegaconf.listconfig.ListConfig)):
         raise ValueError(
-            f"request_config must be a list of argument definitions, but got {request_config}"
+            f"request_config must be a list of argument definitions, but got {request_config} of type {type(request_config)}."
         )
 
     fields = {}
 
     for item in request_config:
-        if not isinstance(item, dict):
-            raise ValueError(f"Each request item must be a dict. Got: {item}")
         if "arg" not in item:
             raise ValueError(f"Missing 'arg' field in request item: {item}")
         if "type" not in item:
