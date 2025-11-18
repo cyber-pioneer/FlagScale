@@ -174,8 +174,10 @@ def build_request_model(request_config):
     """
     logger.info(f"Building request model from config: {request_config}")
 
-    if not isinstance(request_config, list):
-        raise ValueError("request_config must be a list of argument definitions")
+    if not isinstance(request_config, (list, omegaconf.listconfig.ListConfig)):
+        raise ValueError(
+            f"request_config must be a list of argument definitions, but got {request_config}"
+        )
 
     fields = {}
 
