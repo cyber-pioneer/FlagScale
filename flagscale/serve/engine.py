@@ -172,13 +172,20 @@ def build_request_model(request_config):
             default: "..."
 
     """
+    logger.info(f"Building request model from config: {request_config}")
+
     if not isinstance(request_config, list):
         raise ValueError("request_config must be a list of argument definitions")
 
     fields = {}
 
     for item in request_config:
-        # new field name key is "arg" instead of "name"
+        if not isinstance(item, dict):
+            raise ValueError(f"Each request item must be a dict. Got: {item}")
+        if "arg" not in item:
+            raise ValueError(f"Missing 'arg' field in request item: {item}")
+        if "type" not in item:
+            raise ValueError(f"Missing 'type' field in request item: {item}")
         name = item["arg"]
         type_ = parse_type(item["type"])
 
