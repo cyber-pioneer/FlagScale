@@ -1,3 +1,4 @@
+import ast
 import builtins
 import importlib
 import importlib.util
@@ -110,27 +111,49 @@ _ALLOWED_BASES = {
 }
 
 
+# Build all possible valid names for allowed types
+_NAME_MAP = {
+    n: t
+    for t in _ALLOWED_BASES
+    for n in (getattr(t, "__name__", None), getattr(t, "_name", None))
+    if n
+}
+
+
+def _parse(node):
+    if isinstance(node, ast.Name):
+        try:
+            return _NAME_MAP[node.id]
+        except KeyError:
+            raise ValueError(f"Unknown type: {node.id!r}")
+
+    if isinstance(node, ast.Subscript):
+        base = _parse(node.value)
+        if base not in _ALLOWED_BASES:
+            raise ValueError(f"Base type not allowed: {base}")
+        s = node.slice
+        args = tuple(_parse(e) for e in s.elts) if isinstance(s, ast.Tuple) else _parse(s)
+        return base[args]
+
+    if isinstance(node, ast.Tuple):
+        return tuple(_parse(e) for e in node.elts)
+
+    raise ValueError(f"Unsupported syntax: {type(node).__name__}")
+
+
 def parse_type(type_str: str):
-    """
-    Strictly parse and validate a type string into a real Python type.
-    Only known and supported types from builtins or typing are allowed.
-    """
     if not isinstance(type_str, str) or not type_str.strip():
         raise ValueError(f"Invalid type string: {type_str!r}")
 
-    ns = {**typing.__dict__, **builtins.__dict__}
-
     try:
-        t = eval(type_str, ns)
-    except Exception as e:
-        raise ValueError(
-            f"Unsupported or invalid type string: {type_str!r}. Such types are supported: {_ALLOWED_BASES!r}"
-        ) from e
+        tree = ast.parse(type_str, mode="eval").body
+        # use ast.parse instead of eval(type_str), to avoid security issues
+    except Exception:
+        raise ValueError(f"Invalid type expression: {type_str!r}")
 
-    # Validate the type structure
-    origin = get_origin(t) or t
-    if origin not in _ALLOWED_BASES:
-        raise ValueError(f"Type {type_str!r} not allowed (origin={origin!r})")
+    t = _parse(tree)
+    if (get_origin(t) or t) not in _ALLOWED_BASES:
+        raise ValueError(f"Type not allowed: {type_str!r}")
 
     return t
 
@@ -138,19 +161,33 @@ def parse_type(type_str: str):
 def build_request_model(request_config):
     """
     Build a Pydantic model dynamically from config.
-    Each entry in request_config["args"] should be a dict like:
-        {"name": "num", "type": "int", "required": False, "default": 1}
-    """
-    fields = {}
-    for arg in request_config["args"]:
-        name = arg["name"]
-        type_ = parse_type(arg["type"])
-        required = arg.get("required", True)
-        default = arg.get("default", ...)
+    New expected format:
 
-        if not required:
-            if default is ...:
-                raise ValueError(f"Default value for optional field {name} must be provided")
+        request:
+          - arg: prompt
+            type: str
+          - arg: system_prompt
+            type: Optional[str]
+            required: false
+            default: "..."
+
+    """
+    if not isinstance(request_config, list):
+        raise ValueError("request_config must be a list of argument definitions")
+
+    fields = {}
+
+    for item in request_config:
+        # new field name key is "arg" instead of "name"
+        name = item["arg"]
+        type_ = parse_type(item["type"])
+
+        required = item.get("required", True)
+        default = item.get("default", ...)
+
+        # optional fields must have explicit default
+        if not required and default is ...:
+            raise ValueError(f"Default value for optional field '{name}' must be provided")
 
         fields[name] = (type_, default)
 

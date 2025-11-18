@@ -16,14 +16,12 @@ experiment:
       enable_composition: true
       name: /generate
       request:
-        args:
-          - name: prompt
-            type: str
-            required: true
-          - name: system_prompt
-            type: Optional[str]
-            required: false
-            default: "You are a helpful assistant."
+        - arg: prompt
+          type: str
+        - arg: system_prompt
+          type: Optional[str]
+          required: false
+          default: "You are a helpful assistant."
   envs:
     CUDA_DEVICE_MAX_CONNECTIONS: 1
     no_proxy: "127.0.0.1,localhost"
