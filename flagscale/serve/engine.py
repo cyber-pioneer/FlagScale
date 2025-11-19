@@ -9,7 +9,6 @@ import os
 import subprocess
 import sys
 import threading
-import typing
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, get_args, get_origin
@@ -23,6 +22,7 @@ import yaml
 
 from dag_utils import check_and_get_port
 from fastapi import FastAPI, HTTPException, Request
+from omegaconf import DictConfig, OmegaConf
 from pydantic import BaseModel, create_model
 from ray import serve
 from ray.serve.handle import DeploymentHandle
@@ -172,9 +172,10 @@ def build_request_model(request_config):
             default: "..."
 
     """
+    request_config = OmegaConf.to_container(request_config, resolve=True)
     logger.info(f"Building request model from config: {request_config}")
 
-    if not isinstance(request_config, (list, omegaconf.listconfig.ListConfig)):
+    if not isinstance(request_config, list):
         raise ValueError(
             f"request_config must be a list of argument definitions, but got {request_config} of type {type(request_config)}."
         )
@@ -218,10 +219,7 @@ def make_deployment(logic_cls, **deploy_kwargs):
 @serve.deployment
 class FinalModel:
     def __init__(
-        self,
-        graph_config: Dict[str, Any],
-        handles: Dict[str, DeploymentHandle],
-        config: omegaconf.DictConfig,
+        self, graph_config: Dict[str, Any], handles: Dict[str, DeploymentHandle], config: DictConfig
     ):
         self.graph_config = graph_config
         self.handles = handles
@@ -295,6 +293,8 @@ def build_graph(config):
             "num_replicas": resources.get("num_replicas", 1),
             "ray_actor_options": ray_actor_options,
         }
+        if "max_ongoing_requests" in resources:
+            deploy_kwargs["max_ongoing_requests"] = resources["max_ongoing_requests"]
         scale_config = {}
         for item in scale_config_items:
             if item in resources:
