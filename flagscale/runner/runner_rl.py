@@ -13,8 +13,8 @@ from flagscale.runner.utils import (
     get_free_port,
     get_nnodes,
     get_nproc_per_node,
-    logger,
     parse_hostfile,
+    rl_logger,
     run_local_command,
     run_scp_command,
     run_ssh_command,
@@ -149,8 +149,8 @@ class SSHRLRunner(RunnerBase):
         self.user_args = _get_args_verl(self.config)
         self.user_envs = self.config.experiment.get("envs", {})
         self.user_script = self.config.experiment.task.entrypoint
-        logger.info("\n************** configuration **************")
-        logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
+        rl_logger.info("\n************** configuration **************")
+        rl_logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
 
     def generate_stop_script(self, host, node_rank):
         if getattr(self.config, "rl", None):
@@ -302,13 +302,13 @@ class SSHRLRunner(RunnerBase):
             try:
                 while True:
                     status = self._query_status()
-                    logger.info(f"Job Status: {status.name}")
+                    rl_logger.info(f"Job Status: {status.name}")
                     if status == JobStatus.COMPLETED_OR_IDLE:
                         break
                     time.sleep(interval)
-                logger.info("Job Ended.")
+                rl_logger.info("Job Ended.")
             except Exception as e:
-                logger.info(e)
+                rl_logger.info(e)
 
     def _stop_each(self, host, node_rank):
         host_stop_script_file = self.generate_stop_script(host, node_rank)

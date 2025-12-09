@@ -10,7 +10,7 @@ from flagscale.runner.utils import (
     get_free_port,
     get_nnodes,
     get_nproc_per_node,
-    logger,
+    inference_logger,
     parse_hostfile,
     run_local_command,
     run_scp_command,
@@ -79,8 +79,8 @@ class SSHInferenceRunner(RunnerBase):
         self.user_args = _get_args_vllm(self.config)
         self.user_envs = self.config.experiment.get("envs", {})
         self.user_script = self.config.experiment.task.entrypoint
-        logger.info("\n************** configuration **************")
-        logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
+        inference_logger.info("\n************** configuration **************")
+        inference_logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
 
     def generate_run_script(self, config, host, node_rank, cmd, background=True, with_test=False):
         logging_config = config.inference.logging

@@ -10,10 +10,10 @@ from omegaconf import DictConfig, OmegaConf
 
 from flagscale.runner.runner_base import RunnerBase
 from flagscale.runner.utils import (
+    compress_logger,
     get_free_port,
     get_nnodes,
     get_nproc_per_node,
-    logger,
     parse_hostfile,
     run_local_command,
     run_scp_command,
@@ -149,8 +149,8 @@ class SSHCompressRunner(RunnerBase):
         self.user_envs = self.config.experiment.get("envs", {})
         self.cur_envs = None  # current node envs
         self.user_script = self.config.experiment.task.entrypoint
-        logger.info("\n************** configuration **************")
-        logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
+        compress_logger.info("\n************** configuration **************")
+        compress_logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
 
     def _run_each(
         self,

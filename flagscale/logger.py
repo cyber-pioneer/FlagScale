@@ -37,14 +37,23 @@ class Logger:
         self.logger.debug(message)
 
 
-GLOBAL_LOGGER = None
+# Global registry for multiple logger instances
+_GLOBAL_LOGGERS = {}
 
 
-def get_logger():
-    global GLOBAL_LOGGER
-    if GLOBAL_LOGGER is None:
-        GLOBAL_LOGGER = Logger("FlagScale")
-    return GLOBAL_LOGGER
+def get_logger(name="FlagScale"):
+    """Get a singleton Logger instance by name."""
+    if name not in _GLOBAL_LOGGERS:
+        _GLOBAL_LOGGERS[name] = Logger(name)
+    return _GLOBAL_LOGGERS[name]
 
 
-logger = get_logger()
+# Default main logger
+logger = get_logger("FlagScale")
+
+# Dedicated loggers for submodules
+train_logger = get_logger("FlagScale.train")
+inference_logger = get_logger("FlagScale.inference")
+compress_logger = get_logger("FlagScale.compress")
+serve_logger = get_logger("FlagScale.serve")
+rl_logger = get_logger("FlagScale.rl")

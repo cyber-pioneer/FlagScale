@@ -30,9 +30,9 @@ from flagscale.runner.utils import (
     is_master,
     is_master_node,
     is_ray_master_running,
-    logger,
     parse_hostfile,
     run_local_command,
+    serve_logger,
     wait_for_ray_master,
 )
 
@@ -96,7 +96,7 @@ def _reset_serve_port(config):
             break
     OmegaConf.set_struct(config, True)
     if not model_port:
-        logger.warning(f"No 'model_port' configuration found in task config: {config}")
+        serve_logger.warning(f"No 'model_port' configuration found in task config: {config}")
     return model_port
 
 
@@ -105,7 +105,9 @@ def _get_inference_engine(config):
     if not serve_config:
         raise ValueError(f"No 'serve' configuration found in task config: {serve_config}")
     if serve_config and len(serve_config) > 1:
-        logger.warning(f"Multiple 'serve' configurations found in task config: {serve_config}")
+        serve_logger.warning(
+            f"Multiple 'serve' configurations found in task config: {serve_config}"
+        )
 
     engine = serve_config[0].get("engine", None)
     return engine
@@ -234,7 +236,7 @@ def match_address(address):
 
 def parse_cloud_hostfile(hostfile_path):
     if hostfile_path is None or not os.path.isfile(hostfile_path):
-        logger.warning(
+        serve_logger.warning(
             f"Hostfile {hostfile_path} not found. The task will proceed using only local resources."
         )
         return None
@@ -290,7 +292,7 @@ def _generate_run_script_serve(config, host, node_rank, cmd, background=True, wi
     else:
         before_start_cmd = ""
     cmd += f" --log-dir={logging_config.log_dir}"
-    logger.info(f"in _generate_run_script_serve, cmd: {cmd}")
+    serve_logger.info(f"in _generate_run_script_serve, cmd: {cmd}")
     try:
         import vllm
 
@@ -407,7 +409,7 @@ def _generate_run_script_serve(config, host, node_rank, cmd, background=True, wi
                                 "http_port": str(http_port),
                             },
                         }
-                    logger.info(
+                    serve_logger.info(
                         f"============= prefill instance {i}, p_kv_config: {p_kv_config} ============="
                     )
                     card_ids, update_p_address = resource_manager.get_available_card_ids(
@@ -466,7 +468,7 @@ def _generate_run_script_serve(config, host, node_rank, cmd, background=True, wi
                                 "http_port": str(http_port),
                             },
                         }
-                    logger.info(
+                    serve_logger.info(
                         f"============= decode instance {j}, d_kv_config: {d_kv_config} ============="
                     )
                     card_ids, update_d_address = resource_manager.get_available_card_ids(
@@ -560,7 +562,7 @@ def _generate_run_script_serve(config, host, node_rank, cmd, background=True, wi
                             if per_node_cmd:
                                 f.write(f"{per_node_cmd}\n")
                         if index != 0:
-                            logger.info(f"generate run script args, config: {config}")
+                            serve_logger.info(f"generate run script args, config: {config}")
                             args = None
                             for item in config.get("serve", []):
                                 if item.get("serve_id", None) in ("vllm_model", "sglang_model"):
@@ -573,7 +575,7 @@ def _generate_run_script_serve(config, host, node_rank, cmd, background=True, wi
                             common_args = copy.deepcopy(args.get("engine_args", {}))
                             sglang_args = args.get("engine_args_specific", {}).get("sglang", {})
                             if sglang_args.get("dist-init-addr", None):
-                                logger.warning(
+                                serve_logger.warning(
                                     f"sglang dist-init-addr:{ sglang_args['dist-init-addr']} exists, will be overwrite by master_addr, master_port"
                                 )
                                 was_struct = OmegaConf.is_struct(sglang_args)
@@ -591,7 +593,7 @@ def _generate_run_script_serve(config, host, node_rank, cmd, background=True, wi
                                 ):
                                     for key, value in node_args[ip]["engine_args"].items():
                                         common_args[key] = value
-                                        logger.info(
+                                        serve_logger.info(
                                             f"node_args[{ip}] overwrite engine_args {key} = {value}"
                                         )
 
@@ -635,7 +637,9 @@ def _generate_run_script_serve(config, host, node_rank, cmd, background=True, wi
                             ssh_cmd = f'ssh -n -p {ssh_port} {ip} "{node_cmd}"'
                             if docker_name:
                                 ssh_cmd = f"ssh -n -p {ssh_port} {ip} \"docker exec {docker_name} /bin/bash -c '{node_cmd}'\""
-                            logger.info(f"in _generate_run_script_serve, sglang ssh_cmd: {ssh_cmd}")
+                            serve_logger.info(
+                                f"in _generate_run_script_serve, sglang ssh_cmd: {ssh_cmd}"
+                            )
                             f.write(f"{ssh_cmd}\n")
                         continue
 
@@ -716,7 +720,7 @@ def _generate_run_script_serve(config, host, node_rank, cmd, background=True, wi
             if node_cmd:
                 f.write(f"{node_cmd}\n")
 
-        logger.info(f"in _generate_run_script_serve, write cmd: {cmd}")
+        serve_logger.info(f"in _generate_run_script_serve, write cmd: {cmd}")
         f.write(f"mkdir -p {logging_config.log_dir}\n")
         f.write(f"mkdir -p {logging_config.pids_dir}\n")
         f.write(f"\n")
@@ -988,7 +992,7 @@ class SSHServeRunner(RunnerBase):
         if self.resources:
             for key, value in self.resources.items():
                 if not value.get("type", None):
-                    logger.warning(
+                    serve_logger.warning(
                         f"The hostfile key type is not set for host {key}, using gpu by default"
                     )
                     self.resources[key]["type"] = "gpu"
@@ -996,8 +1000,8 @@ class SSHServeRunner(RunnerBase):
             self.config["nodes"] = list(self.resources.items())
             OmegaConf.set_struct(self.config, True)
 
-        logger.info("\n************** configuration **************")
-        logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
+        serve_logger.info("\n************** configuration **************")
+        serve_logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
 
     def generate_stop_script(self, host, node_rank):
         logging_config = self.config.logging
@@ -1161,7 +1165,7 @@ class SSHServeRunner(RunnerBase):
         host_stop_script_file = self.generate_stop_script(host, node_rank)
         logging_config = self.config.logging
         cmd = f"bash {host_stop_script_file}"
-        logger.info(f"Run the local command: {cmd}")
+        serve_logger.info(f"Run the local command: {cmd}")
         subprocess.run(
             cmd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace"
         )
@@ -1207,7 +1211,7 @@ class SSHServeRunner(RunnerBase):
         try:
             result = run_local_command(f"bash {host_query_script_file}", query=True)
         except Exception as e:
-            logger.error(f"Failed to query job status on {host}: {e}")
+            serve_logger.error(f"Failed to query job status on {host}: {e}")
         result = result.stdout.rstrip() if result else ""
         return result
 
@@ -1236,14 +1240,14 @@ class SSHServeRunner(RunnerBase):
         # Modify OpenAI's API key and API base to use vLLM's API server.
         api_key = "EMPTY"
         api_url = f"http://{self.host}:{self.port}/v1"
-        logger.info(f"Testing API {api_url}")
+        serve_logger.info(f"Testing API {api_url}")
 
         try:
             client = OpenAI(api_key=api_key, base_url=api_url)
             messages = [{"role": "user", "content": "who are you?"}]
             response = client.chat.completions.create(model=model_name, messages=messages)
         except Exception as e:
-            # logger.info(f"API {api_url} is not ready, please wait a moment")
+            # serve_logger.info(f"API {api_url} is not ready, please wait a moment")
             return False
 
         return True
@@ -1281,7 +1285,7 @@ class SSHServeRunner(RunnerBase):
             range_ratio=range_ratio,
         )
         api_url = f"http://{self.host}:{self.port}/v1/chat/completions"
-        logger.info(f"Profiling API {api_url}")
+        serve_logger.info(f"Profiling API {api_url}")
 
         ### allow metric = [\"ttft\", \"tpot\", \"itl\", \"e2el\"]
         ### allow percentiles = [\"25,50,75\"]
@@ -1331,7 +1335,7 @@ class CloudServeRunner(RunnerBase):
             self.resources = parse_cloud_hostfile(hostfile_path)
             for key, value in self.resources.items():
                 if not value.get("type", None):
-                    logger.warning(
+                    serve_logger.warning(
                         f"The hostfile key type is not set for host {key}, using gpu by default"
                     )
                     self.resources[key]["type"] = "gpu"
@@ -1363,8 +1367,8 @@ class CloudServeRunner(RunnerBase):
             raise ValueError(
                 f"Invalid config entrypoint: {entrypoint}, must be a python file path or null."
             )
-        logger.info("\n************** configuration **************")
-        logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
+        serve_logger.info("\n************** configuration **************")
+        serve_logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
 
     def _run_each(
         self,

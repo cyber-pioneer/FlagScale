@@ -19,7 +19,14 @@ import numpy as np
 from omegaconf import DictConfig, OmegaConf
 from tqdm.asyncio import tqdm
 
-from flagscale.logger import logger
+from flagscale.logger import (
+    compress_logger,
+    inference_logger,
+    logger,
+    rl_logger,
+    serve_logger,
+    train_logger,
+)
 
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
 
