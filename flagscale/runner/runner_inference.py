@@ -1,21 +1,10 @@
-import importlib
 import os
 import shlex
-import sys
 
 from omegaconf import DictConfig, OmegaConf
 
 from flagscale.runner.runner_base import RunnerBase
-from flagscale.runner.utils import (
-    get_free_port,
-    get_nnodes,
-    get_nproc_per_node,
-    inference_logger,
-    parse_hostfile,
-    run_local_command,
-    run_scp_command,
-    run_ssh_command,
-)
+from flagscale.runner.utils import get_free_port, get_nnodes, get_nproc_per_node, inference_logger
 
 
 def _get_args_vllm(config: DictConfig):
@@ -76,7 +65,7 @@ class SSHInferenceRunner(RunnerBase):
 
     def _prepare(self):
         _update_config_inference(self.config)
-        self.user_args = _get_args_vllm(self.config)
+        self.user_args = _get_args_vllm(self.config, self.logging_config.scripts_dir)
         self.user_envs = self.config.experiment.get("envs", {})
         self.user_script = self.config.experiment.task.entrypoint
         inference_logger.info("\n************** configuration **************")

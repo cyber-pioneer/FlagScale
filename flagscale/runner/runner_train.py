@@ -310,42 +310,6 @@ def _generate_run_script_train(
     return host_run_script_file
 
 
-def _generate_stop_script_train(config, host, node_rank):
-    if getattr(config, "train", None):
-        logging_config = config.train.system.logging
-    else:
-        logging_config = config.inference.system.logging
-
-    host_stop_script_file = os.path.join(
-        logging_config.scripts_dir, f"host_{node_rank}_{host}_stop.sh"
-    )
-
-    host_pid_file = os.path.join(logging_config.pids_dir, f"host_{node_rank}_{host}.pid")
-
-    os.makedirs(logging_config.scripts_dir, exist_ok=True)
-
-    cmds_config = config.experiment.get("cmds", None)
-    if cmds_config:
-        after_stop = cmds_config.get("after_stop", "")
-    else:
-        after_stop = ""
-    with open(host_stop_script_file, "w") as f:
-        f.write("#!/bin/bash\n\n")
-        f.write("if [ -f " + host_pid_file + " ]; then\n")
-        f.write("    pid=$(cat " + host_pid_file + ")\n")
-        f.write("    pkill -P $pid\n")
-        f.write("else\n")
-        # TODO: This is a temporary fix. We need to find a better way to stop the job.
-        f.write("    pkill -f 'torchrun'\n")
-        f.write("fi\n")
-        f.write(f"{after_stop}\n")
-        f.flush()
-        os.fsync(f.fileno())
-    os.chmod(host_stop_script_file, 0o755)
-
-    return host_stop_script_file
-
-
 def run_node(
     func,
     node_rank,
@@ -408,6 +372,41 @@ class SSHTrainRunner(RunnerBase):
         self.node_specific = self.config.get("node_specific", None)
         logger.info("\n************** configuration **************")
         logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
+
+    def generate_stop_script(self, host, node_rank):
+        if getattr(self.config, "train", None):
+            logging_config = self.config.train.system.logging
+        else:
+            logging_config = self.config.inference.system.logging
+
+        host_stop_script_file = os.path.join(
+            logging_config.scripts_dir, f"host_{node_rank}_{host}_stop.sh"
+        )
+
+        host_pid_file = os.path.join(logging_config.pids_dir, f"host_{node_rank}_{host}.pid")
+
+        os.makedirs(logging_config.scripts_dir, exist_ok=True)
+
+        cmds_config = self.config.experiment.get("cmds", None)
+        if cmds_config:
+            after_stop = cmds_config.get("after_stop", "")
+        else:
+            after_stop = ""
+        with open(host_stop_script_file, "w") as f:
+            f.write("#!/bin/bash\n\n")
+            f.write("if [ -f " + host_pid_file + " ]; then\n")
+            f.write("    pid=$(cat " + host_pid_file + ")\n")
+            f.write("    pkill -P $pid\n")
+            f.write("else\n")
+            # TODO: This is a temporary fix. We need to find a better way to stop the job.
+            f.write("    pkill -f 'torchrun'\n")
+            f.write("fi\n")
+            f.write(f"{after_stop}\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(host_stop_script_file, 0o755)
+
+        return host_stop_script_file
 
     def _run_each(
         self,
@@ -573,7 +572,7 @@ class SSHTrainRunner(RunnerBase):
         return None
 
     def _stop_each(self, host, node_rank):
-        host_stop_script_file = _generate_stop_script_train(self.config, host, node_rank)
+        host_stop_script_file = self.generate_stop_script(host, node_rank)
         logging_config = self.config.train.system.logging
 
         if host != "localhost":
