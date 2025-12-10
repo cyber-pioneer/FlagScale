@@ -137,42 +137,6 @@ def _generate_run_script_rl(
     return host_run_script_file
 
 
-def _generate_stop_script_rl(config, host, node_rank):
-    if getattr(config, "rl", None):
-        logging_config = config.system.logging
-    else:
-        logging_config = config.inference.system.logging
-
-    host_stop_script_file = os.path.join(
-        logging_config.scripts_dir, f"host_{node_rank}_{host}_stop.sh"
-    )
-
-    host_pid_file = os.path.join(logging_config.pids_dir, f"host_{node_rank}_{host}.pid")
-
-    os.makedirs(logging_config.scripts_dir, exist_ok=True)
-
-    cmds_config = config.experiment.get("cmds", None)
-    if cmds_config:
-        after_stop = cmds_config.get("after_stop", "")
-    else:
-        after_stop = ""
-    with open(host_stop_script_file, "w") as f:
-        f.write("#!/bin/bash\n\n")
-        f.write("if [ -f " + host_pid_file + " ]; then\n")
-        f.write("    pid=$(cat " + host_pid_file + ")\n")
-        f.write("    pkill -P $pid\n")
-        f.write("else\n")
-        # TODO: This is a temporary fix. We need to find a better way to stop the job.
-        f.write("    pkill -f 'torchrun'\n")
-        f.write("fi\n")
-        f.write(f"{after_stop}\n")
-        f.flush()
-        os.fsync(f.fileno())
-    os.chmod(host_stop_script_file, 0o755)
-
-    return host_stop_script_file
-
-
 class SSHRLRunner(RunnerBase):
     def __init__(self, config: DictConfig):
         super().__init__(config)
@@ -185,9 +149,43 @@ class SSHRLRunner(RunnerBase):
         self.user_args = _get_args_verl(self.config)
         self.user_envs = self.config.experiment.get("envs", {})
         self.user_script = self.config.experiment.task.entrypoint
-        self.resources = parse_hostfile(self.config.experiment.runner.get("hostfile", None))
         logger.info("\n************** configuration **************")
         logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
+
+    def generate_stop_script(self, host, node_rank):
+        if getattr(self.config, "rl", None):
+            logging_config = self.config.system.logging
+        else:
+            logging_config = self.config.inference.system.logging
+
+        host_stop_script_file = os.path.join(
+            logging_config.scripts_dir, f"host_{node_rank}_{host}_stop.sh"
+        )
+
+        host_pid_file = os.path.join(logging_config.pids_dir, f"host_{node_rank}_{host}.pid")
+
+        os.makedirs(logging_config.scripts_dir, exist_ok=True)
+
+        cmds_config = self.config.experiment.get("cmds", None)
+        if cmds_config:
+            after_stop = cmds_config.get("after_stop", "")
+        else:
+            after_stop = ""
+        with open(host_stop_script_file, "w") as f:
+            f.write("#!/bin/bash\n\n")
+            f.write("if [ -f " + host_pid_file + " ]; then\n")
+            f.write("    pid=$(cat " + host_pid_file + ")\n")
+            f.write("    pkill -P $pid\n")
+            f.write("else\n")
+            # TODO: This is a temporary fix. We need to find a better way to stop the job.
+            f.write("    pkill -f 'torchrun'\n")
+            f.write("fi\n")
+            f.write(f"{after_stop}\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(host_stop_script_file, 0o755)
+
+        return host_stop_script_file
 
     def _run_each(
         self,
@@ -313,7 +311,7 @@ class SSHRLRunner(RunnerBase):
                 logger.info(e)
 
     def _stop_each(self, host, node_rank):
-        host_stop_script_file = _generate_stop_script_rl(self.config, host, node_rank)
+        host_stop_script_file = self.generate_stop_script(host, node_rank)
         logging_config = self.config.system.logging
 
         if host != "localhost":

@@ -925,106 +925,6 @@ def _generate_cloud_run_script_serve(
     return host_run_script_file
 
 
-def _generate_stop_script(config, host, node_rank):
-    logging_config = config.logging
-
-    host_stop_script_file = os.path.join(
-        logging_config.scripts_dir, f"host_{node_rank}_{host}_stop.sh"
-    )
-
-    os.makedirs(logging_config.scripts_dir, exist_ok=True)
-
-    cmds_config = config.experiment.get("cmds", None)
-    if cmds_config:
-        after_stop = cmds_config.get("after_stop", "")
-    else:
-        after_stop = ""
-
-    nodes = config.get("nodes", None)
-
-    cmds_config = config.experiment.get("cmds", None)
-    ssh_port = config.experiment.runner.get("ssh_port", 22)
-    docker_name = config.experiment.runner.get("docker", None)
-    if cmds_config:
-        before_start_cmd = cmds_config.get("before_start", "")
-    else:
-        before_start_cmd = ""
-
-    deploy_config = config.experiment.get("runner", {}).get("deploy", {})
-    envs = config.experiment.get("envs", {})
-    with open(host_stop_script_file, "w") as f:
-        f.write("#!/bin/bash\n\n")
-        f.write("set -x\n")
-        f.write(f"\n")
-        f.write(f"{before_start_cmd}\n")
-        f.write(f"\n")
-        envs_str = " && ".join(f"export {key}={value}" for key, value in envs.items())
-        f.write(f"{envs_str}\n")
-
-        if nodes:
-            if deploy_config.get("prefill_decode_disaggregation", False):
-                f.write(f"# clean nodes \n")
-                if len(nodes) > 1:
-                    for ip, node in nodes[1:]:
-                        node_cmd = f"pkill -f vllm && pkill -f python"
-                        ssh_cmd = f'ssh -n -p {ssh_port} {ip} "{node_cmd}"'
-                        if docker_name:
-                            ssh_cmd = f"ssh -n -p {ssh_port} {ip} \"docker exec {docker_name} /bin/bash -c '{node_cmd}'\""
-                        f.write(f"{ssh_cmd}\n")
-
-                f.write("pkill -f 'run_inference_engine'\n")
-                f.write("pkill -f 'run_fs_serve_vllm'\n")
-                f.write("pkill -f 'vllm serve'\n")
-                f.write("pkill -f 'run_disagg_xpyd_router'\n")
-                f.write(f"\n")
-
-            else:
-                f.write(f"ray_path=$(realpath $(which ray))\n")
-                f.write(f"# clean nodes \n")
-                if len(nodes) > 1:
-                    for ip, node in nodes[1:]:
-                        node_cmd = f"${{ray_path}} stop && pkill -f python"
-                        if before_start_cmd:
-                            node_cmd = f"{before_start_cmd} && " + node_cmd
-                        if envs_str:
-                            node_cmd = f"{envs_str} && " + node_cmd
-
-                        ssh_cmd = f'ssh -n -p {ssh_port} {ip} "{node_cmd}"'
-
-                        if docker_name:
-                            ssh_cmd = f"ssh -n -p {ssh_port} {ip} \"docker exec {docker_name} /bin/bash -c '{node_cmd}'\""
-                        f.write(f"{ssh_cmd}\n")
-                if before_start_cmd:
-                    f.write(f"{before_start_cmd} && ${{ray_path}} stop\n")
-                else:
-                    f.write(f"${{ray_path}} stop\n")
-                f.write("pkill -f 'run_inference_engine'\n")
-                f.write("pkill -f 'run_fs_serve_vllm'\n")
-                f.write("pkill -f 'vllm serve'\n")
-                f.write("pkill -f multiprocessing\n")
-                f.write(f"\n")
-        else:
-            node_cmd = None
-            if deploy_config.get("use_fs_serve", True) and config.serve[0].get("engine", None):
-                f.write(f"ray_path=$(realpath $(which ray))\n")
-                node_cmd = f"${{ray_path}} stop"
-            if before_start_cmd:
-                node_cmd = f"{before_start_cmd} && {node_cmd}" if node_cmd else before_start_cmd
-            if node_cmd:
-                f.write(f"{node_cmd}\n")
-            f.write("pkill -f 'run_inference_engine'\n")
-            f.write("pkill -f 'run_fs_serve_vllm'\n")
-            f.write("pkill -f 'vllm serve'\n")
-            f.write("pkill -f multiprocessing\n")
-            f.write("\n")
-        f.write(f"{after_stop}\n")
-        f.flush()
-        os.fsync(f.fileno())
-    os.chmod(host_stop_script_file, 0o755)
-
-    return host_stop_script_file
-
-
 def kill_process_tree(pid):
     try:
         parent = psutil.Process(pid)
@@ -1085,30 +985,120 @@ class SSHServeRunner(RunnerBase):
             raise ValueError(
                 f"Invalid config entrypoint: {entrypoint}, must be a python file path or null."
             )
-        hostfile_path = self.config.experiment.runner.get("hostfile", None)
-        if hostfile_path:
-            if os.path.isabs(hostfile_path):
-                hostfile_path = hostfile_path
-            else:
-                hostfile_path = os.path.join(os.getcwd(), hostfile_path)
-            if not os.path.exists(hostfile_path):
-                raise ValueError(f"The hostfile {hostfile_path} does not exist")
-        self.resources = None
-        if hostfile_path:
-            self.resources = parse_hostfile(hostfile_path)
+        if self.resources:
             for key, value in self.resources.items():
                 if not value.get("type", None):
                     logger.warning(
                         f"The hostfile key type is not set for host {key}, using gpu by default"
                     )
                     self.resources[key]["type"] = "gpu"
-            if self.resources:
-                OmegaConf.set_struct(self.config, False)
-                self.config["nodes"] = list(self.resources.items())
-                OmegaConf.set_struct(self.config, True)
+            OmegaConf.set_struct(self.config, False)
+            self.config["nodes"] = list(self.resources.items())
+            OmegaConf.set_struct(self.config, True)
 
         logger.info("\n************** configuration **************")
         logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
+
+    def generate_stop_script(self, host, node_rank):
+        logging_config = self.config.logging
+
+        host_stop_script_file = os.path.join(
+            logging_config.scripts_dir, f"host_{node_rank}_{host}_stop.sh"
+        )
+
+        os.makedirs(logging_config.scripts_dir, exist_ok=True)
+
+        cmds_config = self.config.experiment.get("cmds", None)
+        if cmds_config:
+            after_stop = cmds_config.get("after_stop", "")
+        else:
+            after_stop = ""
+
+        nodes = self.config.get("nodes", None)
+
+        cmds_config = self.config.experiment.get("cmds", None)
+        ssh_port = self.config.experiment.runner.get("ssh_port", 22)
+        docker_name = self.config.experiment.runner.get("docker", None)
+        if cmds_config:
+            before_start_cmd = cmds_config.get("before_start", "")
+        else:
+            before_start_cmd = ""
+
+        deploy_config = self.config.experiment.get("runner", {}).get("deploy", {})
+        envs = self.config.experiment.get("envs", {})
+        with open(host_stop_script_file, "w") as f:
+            f.write("#!/bin/bash\n\n")
+            f.write("set -x\n")
+            f.write(f"\n")
+            f.write(f"{before_start_cmd}\n")
+            f.write(f"\n")
+            envs_str = " && ".join(f"export {key}={value}" for key, value in envs.items())
+            f.write(f"{envs_str}\n")
+
+            if nodes:
+                if deploy_config.get("prefill_decode_disaggregation", False):
+                    f.write(f"# clean nodes \n")
+                    if len(nodes) > 1:
+                        for ip, node in nodes[1:]:
+                            node_cmd = f"pkill -f vllm && pkill -f python"
+                            ssh_cmd = f'ssh -n -p {ssh_port} {ip} "{node_cmd}"'
+                            if docker_name:
+                                ssh_cmd = f"ssh -n -p {ssh_port} {ip} \"docker exec {docker_name} /bin/bash -c '{node_cmd}'\""
+                            f.write(f"{ssh_cmd}\n")
+
+                    f.write("pkill -f 'run_inference_engine'\n")
+                    f.write("pkill -f 'run_fs_serve_vllm'\n")
+                    f.write("pkill -f 'vllm serve'\n")
+                    f.write("pkill -f 'run_disagg_xpyd_router'\n")
+                    f.write(f"\n")
+
+                else:
+                    f.write(f"ray_path=$(realpath $(which ray))\n")
+                    f.write(f"# clean nodes \n")
+                    if len(nodes) > 1:
+                        for ip, node in nodes[1:]:
+                            node_cmd = f"${{ray_path}} stop && pkill -f python"
+                            if before_start_cmd:
+                                node_cmd = f"{before_start_cmd} && " + node_cmd
+                            if envs_str:
+                                node_cmd = f"{envs_str} && " + node_cmd
+
+                            ssh_cmd = f'ssh -n -p {ssh_port} {ip} "{node_cmd}"'
+
+                            if docker_name:
+                                ssh_cmd = f"ssh -n -p {ssh_port} {ip} \"docker exec {docker_name} /bin/bash -c '{node_cmd}'\""
+                            f.write(f"{ssh_cmd}\n")
+                    if before_start_cmd:
+                        f.write(f"{before_start_cmd} && ${{ray_path}} stop\n")
+                    else:
+                        f.write(f"${{ray_path}} stop\n")
+                    f.write("pkill -f 'run_inference_engine'\n")
+                    f.write("pkill -f 'run_fs_serve_vllm'\n")
+                    f.write("pkill -f 'vllm serve'\n")
+                    f.write("pkill -f multiprocessing\n")
+                    f.write(f"\n")
+            else:
+                node_cmd = None
+                if deploy_config.get("use_fs_serve", True) and self.config.serve[0].get(
+                    "engine", None
+                ):
+                    f.write(f"ray_path=$(realpath $(which ray))\n")
+                    node_cmd = f"${{ray_path}} stop"
+                if before_start_cmd:
+                    node_cmd = f"{before_start_cmd} && {node_cmd}" if node_cmd else before_start_cmd
+                if node_cmd:
+                    f.write(f"{node_cmd}\n")
+                f.write("pkill -f 'run_inference_engine'\n")
+                f.write("pkill -f 'run_fs_serve_vllm'\n")
+                f.write("pkill -f 'vllm serve'\n")
+                f.write("pkill -f multiprocessing\n")
+                f.write("\n")
+            f.write(f"{after_stop}\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(host_stop_script_file, 0o755)
+
+        return host_stop_script_file
 
     def _run_each(
         self,
@@ -1168,7 +1158,7 @@ class SSHServeRunner(RunnerBase):
             pid = int(pid.strip())
         kill_process_tree(pid)
 
-        host_stop_script_file = _generate_stop_script(self.config, host, node_rank)
+        host_stop_script_file = self.generate_stop_script(host, node_rank)
         logging_config = self.config.logging
         cmd = f"bash {host_stop_script_file}"
         logger.info(f"Run the local command: {cmd}")

@@ -149,7 +149,6 @@ class SSHCompressRunner(RunnerBase):
         self.user_envs = self.config.experiment.get("envs", {})
         self.cur_envs = None  # current node envs
         self.user_script = self.config.experiment.task.entrypoint
-        self.resources = parse_hostfile(self.config.experiment.runner.get("hostfile", None))
         logger.info("\n************** configuration **************")
         logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
 

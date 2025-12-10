@@ -69,7 +69,7 @@ def wait_for_ray_master(
 def parse_hostfile(hostfile_path):
     if hostfile_path is None or not os.path.isfile(hostfile_path):
         logger.warning(
-            f"Hostfile {hostfile_path} not found. The training will proceed using only local resources."
+            f"Hostfile {hostfile_path} not found. The task will proceed using only local resources."
         )
         return None
 

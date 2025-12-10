@@ -404,7 +404,6 @@ class SSHTrainRunner(RunnerBase):
         self.rdzv_id = datetime.now().strftime("%Y%m%d_%H%M%S.%f")
         self.user_envs = self.config.experiment.get("envs", {})
         self.user_script = self.config.experiment.task.entrypoint
-        self.resources = parse_hostfile(self.config.experiment.runner.get("hostfile", None))
         self.device_type_specific = self.config.get("device_type_specific", None)
         self.node_specific = self.config.get("node_specific", None)
         logger.info("\n************** configuration **************")
