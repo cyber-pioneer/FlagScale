@@ -181,7 +181,29 @@ class RunnerBase(ABC):
 
         nnodes = get_nnodes(len(self.resources), self.config.experiment.runner.get("nnodes", None))
 
-        for node_rank, (host, _) in enumerate(self.resources.items()):
-            if node_rank >= nnodes:
-                break
-            self._stop_each(host, node_rank)
+        if self.task_type == "rl":
+            cpu_num = multiprocessing.cpu_count()
+
+            num_processes = min(nnodes, cpu_num)
+            cmds_config = self.config.experiment.get("cmds", None)
+            if cmds_config:
+                before_start = cmds_config.get("before_start", "")
+            with multiprocessing.Pool(processes=num_processes) as pool:
+                for node_rank, (host, _) in enumerate(self.resources.items()):
+                    run_ssh_command(host, f"{before_start};ray stop")
+        elif self.task_type == "train":
+            cpu_num = multiprocessing.cpu_count()
+            num_processes = min(nnodes, cpu_num)
+            with multiprocessing.Pool(processes=num_processes) as pool:
+                tasks = []
+                for node_rank, (host, _) in enumerate(self.resources.items()):
+                    if node_rank >= nnodes:
+                        break
+                    args = (host, node_rank)
+                    tasks.append(args)
+                pool.starmap(self._stop_each, tasks)
+        else:
+            for node_rank, (host, _) in enumerate(self.resources.items()):
+                if node_rank >= nnodes:
+                    break
+                self._stop_each(host, node_rank)

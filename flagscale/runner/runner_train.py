@@ -588,23 +588,6 @@ class SSHTrainRunner(RunnerBase):
         else:
             run_local_command(f"bash {host_stop_script_file}")
 
-    def stop(self):
-        if self.resources is None:
-            self._stop_each("localhost", 0)
-            return
-
-        nnodes = get_nnodes(len(self.resources), self.config.experiment.runner.get("nnodes", None))
-
-        num_processes = min(nnodes, _MAX_CPU_COUNT)
-        with multiprocessing.Pool(processes=num_processes) as pool:
-            tasks = []
-            for node_rank, (host, _) in enumerate(self.resources.items()):
-                if node_rank >= nnodes:
-                    break
-                args = (host, node_rank)
-                tasks.append(args)
-            pool.starmap(self._stop_each, tasks)
-
     def _generate_query_script(self, host, node_rank):
         """Genetrate the query script for each host."""
         logging_config = self.config.train.system.logging

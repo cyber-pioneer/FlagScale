@@ -76,70 +76,9 @@ def _update_config_compress(config: DictConfig):
     OmegaConf.set_struct(config, True)
 
 
-def _generate_run_script_compress(config, host, node_rank, cmd, background=True, with_test=False):
-    system_config = config.compress.system
-    logging_config = config.compress.system.logging
-
-    no_shared_fs = config.experiment.runner.get("no_shared_fs", False)
-    if no_shared_fs:
-        host_output_file = os.path.join(logging_config.log_dir, f"host.output")
-    else:
-        host_output_file = os.path.join(logging_config.log_dir, f"host_{node_rank}_{host}.output")
-    host_run_script_file = os.path.join(
-        logging_config.scripts_dir, f"host_{node_rank}_{host}_run.sh"
-    )
-    host_pid_file = os.path.join(logging_config.pids_dir, f"host_{node_rank}_{host}.pid")
-
-    os.makedirs(logging_config.scripts_dir, exist_ok=True)
-
-    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    compress_dir = os.path.join(root_dir, "compress")
-    ### set megatron dir for dataset
-    megtron_dir = os.path.join(root_dir, "megatron")
-    cmds_config = config.experiment.get("cmds", None)
-    if cmds_config:
-        before_start = cmds_config.get("before_start", "")
-    else:
-        before_start = ""
-    with open(host_run_script_file, "w") as f:
-        f.write("#!/bin/bash\n\n")
-        f.write(f"{before_start}\n")
-        f.write(f"mkdir -p {system_config.save_dir}\n")
-        f.write(f"mkdir -p {system_config.logging.log_dir}\n")
-        f.write(f"mkdir -p {system_config.logging.pids_dir}\n")
-        f.write(f"mkdir -p {system_config.logging.tensorboard_dir}\n")
-        f.write(f"mkdir -p {system_config.logging.wandb_save_dir}\n")
-        f.write(f"\n")
-        f.write(f"cd {root_dir}\n")
-        f.write(f"\n")
-        f.write(f"export PYTHONPATH={compress_dir}:{megtron_dir}:{root_dir}\n")
-        f.write(f"\n")
-        f.write(f'cmd="{cmd}"\n')
-        f.write(f"\n")
-        if with_test:
-            f.write(f'bash -c "$cmd; sync" \n')
-        else:
-            # TODO: need a option to control whether to append or overwrite the output file
-            # Now, it always appends to the output file
-            if background:
-                f.write(
-                    f'nohup bash -c "$cmd; sync" >> {host_output_file} 2>&1 & echo $! > {host_pid_file}\n'
-                )
-            else:
-                f.write(f'bash -c "$cmd; sync" >> {host_output_file} 2>&1\n')
-        f.write("\n")
-        f.flush()
-        os.fsync(f.fileno())
-    os.chmod(host_run_script_file, 0o755)
-
-    return host_run_script_file
-
-
 class SSHCompressRunner(RunnerBase):
     def __init__(self, config: DictConfig):
         super().__init__(config)
-        self.task_type = getattr(self.config.experiment.task, "type", None)
-        assert self.task_type == "compress", f"Unsupported task type: {self.task_type}"
         self._prepare()
 
     def _prepare(self):
@@ -151,6 +90,66 @@ class SSHCompressRunner(RunnerBase):
         self.user_script = self.config.experiment.task.entrypoint
         compress_logger.info("\n************** configuration **************")
         compress_logger.info(f"\n{OmegaConf.to_yaml(self.config)}")
+
+    def generate_run_script(self, host, node_rank, cmd, background=True, with_test=False):
+        system_config = self.config.compress.system
+        logging_config = self.config.compress.system.logging
+
+        no_shared_fs = self.config.experiment.runner.get("no_shared_fs", False)
+        if no_shared_fs:
+            host_output_file = os.path.join(logging_config.log_dir, f"host.output")
+        else:
+            host_output_file = os.path.join(
+                logging_config.log_dir, f"host_{node_rank}_{host}.output"
+            )
+        host_run_script_file = os.path.join(
+            logging_config.scripts_dir, f"host_{node_rank}_{host}_run.sh"
+        )
+        host_pid_file = os.path.join(logging_config.pids_dir, f"host_{node_rank}_{host}.pid")
+
+        os.makedirs(logging_config.scripts_dir, exist_ok=True)
+
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        compress_dir = os.path.join(root_dir, "compress")
+        ### set megatron dir for dataset
+        megtron_dir = os.path.join(root_dir, "megatron")
+        cmds_config = self.config.experiment.get("cmds", None)
+        if cmds_config:
+            before_start = cmds_config.get("before_start", "")
+        else:
+            before_start = ""
+        with open(host_run_script_file, "w") as f:
+            f.write("#!/bin/bash\n\n")
+            f.write(f"{before_start}\n")
+            f.write(f"mkdir -p {system_config.save_dir}\n")
+            f.write(f"mkdir -p {system_config.logging.log_dir}\n")
+            f.write(f"mkdir -p {system_config.logging.pids_dir}\n")
+            f.write(f"mkdir -p {system_config.logging.tensorboard_dir}\n")
+            f.write(f"mkdir -p {system_config.logging.wandb_save_dir}\n")
+            f.write(f"\n")
+            f.write(f"cd {root_dir}\n")
+            f.write(f"\n")
+            f.write(f"export PYTHONPATH={compress_dir}:{megtron_dir}:{root_dir}\n")
+            f.write(f"\n")
+            f.write(f'cmd="{cmd}"\n')
+            f.write(f"\n")
+            if with_test:
+                f.write(f'bash -c "$cmd; sync" \n')
+            else:
+                # TODO: need a option to control whether to append or overwrite the output file
+                # Now, it always appends to the output file
+                if background:
+                    f.write(
+                        f'nohup bash -c "$cmd; sync" >> {host_output_file} 2>&1 & echo $! > {host_pid_file}\n'
+                    )
+                else:
+                    f.write(f'bash -c "$cmd; sync" >> {host_output_file} 2>&1\n')
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(host_run_script_file, 0o755)
+
+        return host_run_script_file
 
     def _run_each(
         self,
@@ -170,8 +169,8 @@ class SSHCompressRunner(RunnerBase):
         cmd = shlex.join(export_cmd + ["python"] + [self.user_script] + self.user_args)
 
         logging_config = self.config.compress.system.logging
-        host_run_script_file = _generate_run_script_compress(
-            self.config, host, node_rank, cmd, background=True, with_test=with_test
+        host_run_script_file = self.generate_run_script(
+            host, node_rank, cmd, background=True, with_test=with_test
         )
 
         if host != "localhost":
@@ -243,15 +242,3 @@ class SSHCompressRunner(RunnerBase):
                 with_test=with_test,
                 dryrun=dryrun,
             )
-
-    def stop(self):
-        if self.resources is None:
-            self._stop_each("localhost", 0)
-            return
-
-        nnodes = get_nnodes(len(self.resources), self.config.experiment.runner.get("nnodes", None))
-
-        for node_rank, (host, _) in enumerate(self.resources.items()):
-            if node_rank >= nnodes:
-                break
-            self._stop_each(host, node_rank)

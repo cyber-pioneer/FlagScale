@@ -46,23 +46,23 @@ def _update_config_rl(config: DictConfig):
     assert os.path.isdir(exp_dir), f"Directory {exp_dir} does not exist."
 
     OmegaConf.set_struct(config, False)
-    if config.get("system", None) is None:
-        config.system = DictConfig({})
+    if config.rl.get("system", None) is None:
+        config.rl.system = DictConfig({})
 
-    if config.system.get("logging", None) is None:
-        config.system.logging = DictConfig({})
+    if config.rl.system.get("logging", None) is None:
+        config.rl.system.logging = DictConfig({})
 
     log_dir = (
-        os.path.abspath(config.system.logging.log_dir)
-        if config.system.logging.get("log_dir", None)
+        os.path.abspath(config.rl.system.logging.log_dir)
+        if config.rl.system.logging.get("log_dir", None)
         else os.path.join(exp_dir, "logs")
     )
     scripts_dir = os.path.join(log_dir, "scripts")
     pids_dir = os.path.join(log_dir, "pids")
 
-    config.system.logging.log_dir = log_dir
-    config.system.logging.scripts_dir = scripts_dir
-    config.system.logging.pids_dir = pids_dir
+    config.rl.system.logging.log_dir = log_dir
+    config.rl.system.logging.scripts_dir = scripts_dir
+    config.rl.system.logging.pids_dir = pids_dir
 
     OmegaConf.set_struct(config, True)
 
@@ -70,8 +70,8 @@ def _update_config_rl(config: DictConfig):
 def _generate_run_script_rl(
     config, host, node_rank, cmd, background=True, with_test=False, resources=None
 ):
-    system_config = config.system
-    logging_config = config.system.logging
+    system_config = config.rl.system
+    logging_config = config.rl.system.logging
 
     no_shared_fs = config.experiment.runner.get("no_shared_fs", False)
     if no_shared_fs:
@@ -154,7 +154,7 @@ class SSHRLRunner(RunnerBase):
 
     def generate_stop_script(self, host, node_rank):
         if getattr(self.config, "rl", None):
-            logging_config = self.config.system.logging
+            logging_config = self.config.rl.system.logging
         else:
             logging_config = self.config.inference.system.logging
 
@@ -232,7 +232,7 @@ class SSHRLRunner(RunnerBase):
             resources=self.resources,
         )
         if host != "localhost":
-            logging_config = self.config.system.logging
+            logging_config = self.config.rl.system.logging
             ssh_port = self.config.experiment.runner.get("ssh_port", 22)
             # Step 1: make sure the scripts_dir exists on the remote host
             run_ssh_command(host, f"mkdir -p {logging_config.scripts_dir}", ssh_port, dryrun)
@@ -312,7 +312,7 @@ class SSHRLRunner(RunnerBase):
 
     def _stop_each(self, host, node_rank):
         host_stop_script_file = self.generate_stop_script(host, node_rank)
-        logging_config = self.config.system.logging
+        logging_config = self.config.rl.system.logging
 
         if host != "localhost":
             ssh_port = self.config.experiment.runner.get("ssh_port", 22)
@@ -326,19 +326,3 @@ class SSHRLRunner(RunnerBase):
             run_ssh_command(host, f"bash {host_stop_script_file}", ssh_port)
         else:
             run_local_command(f"bash {host_stop_script_file}")
-
-    def stop(self):
-        if self.resources is None:
-            self._stop_each("localhost", 0)
-            return
-
-        nnodes = get_nnodes(len(self.resources), self.config.experiment.runner.get("nnodes", None))
-
-        num_processes = min(nnodes, _MAX_CPU_COUNT)
-        cmds_config = self.config.experiment.get("cmds", None)
-        if cmds_config:
-            before_start = cmds_config.get("before_start", "")
-        with multiprocessing.Pool(processes=num_processes) as pool:
-            tasks = []
-            for node_rank, (host, _) in enumerate(self.resources.items()):
-                run_ssh_command(host, f"{before_start};ray stop")
