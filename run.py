@@ -5,6 +5,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 from flagscale.runner.auto_tuner import AutoTuner, ServeAutoTunner
+from flagscale.runner.runner_base import Runner
 from flagscale.runner.runner_compress import SSHCompressRunner
 from flagscale.runner.runner_inference import SSHInferenceRunner
 from flagscale.runner.runner_rl import SSHRLRunner
@@ -69,7 +70,7 @@ def main(config: DictConfig) -> None:
             else:
                 raise ValueError(f"Unknown action {config.action}")
     elif task_type == "inference":
-        runner = SSHInferenceRunner(config)
+        runner = Runner(config)  # bak SSHInferenceRunner
         if config.action == "run":
             runner.run()
         elif config.action == "dryrun":
@@ -102,7 +103,7 @@ def main(config: DictConfig) -> None:
             else:
                 raise ValueError(f"Unknown action {config.action}")
     elif task_type == "compress":
-        runner = SSHCompressRunner(config)
+        runner = Runner(config)  # SSHCompressRunner
         if config.action == "run":
             runner.run()
         elif config.action == "dryrun":
