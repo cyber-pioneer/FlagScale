@@ -134,7 +134,11 @@ def main():
 
     model_config = None
     for item in serve_config:
-        if item.get("serve_id", None) is not None:
+        if "serve_id" not in item:
+            logger.info(f"No 'serve_id' configuration found in task config: {serve_config}")
+            model_config = serve_config
+            break
+        elif item.get("serve_id", None) is not None:
             model_config = item
             break
 

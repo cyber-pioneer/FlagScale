@@ -141,7 +141,15 @@ def _reset_serve_port(config):
         config.experiment.runner.deploy.port = cli_args_port
 
     for item in config.serve:
-        if item.get("serve_id", None) is not None:
+        if "serve_id" not in item:
+            logger.info(f"No 'serve_id' configuration found in task config: {config.serve}")
+            if deploy_port:
+                model_port = deploy_port
+                config.serve.engine_args.port = deploy_port
+            else:
+                model_port = config.serve.engine_args.get("port", 8000)
+            break
+        elif item.get("serve_id", None) is not None:
             if deploy_port:
                 model_port = deploy_port
                 item.engine_args["port"] = deploy_port
